@@ -1,7 +1,6 @@
 # 문법 안내 (Markdown + 위키 링크)
 
-이 파일(data/syntaxguide.md)은 문서의 유일한 원본(canonical)입니다.
-SyntaxGuide 페이지는 이 파일을 렌더링합니다.
+이 문서는 일반 위키 페이지이며, `SyntaxGuide` 제목으로 저장됩니다.
 
 ## 헤딩 (Headings)
 # H1 제목
@@ -19,7 +18,7 @@ SyntaxGuide 페이지는 이 파일을 렌더링합니다.
 
 ## 링크 (Links)
 - 내부 링크(페이지 이동): `[[FrontPage]]`, `[[Home|홈으로]]`
-- 통합 Markdown 링크 `[라벨](대상)`도 사용 가능하며 규칙은 아래와 같습니다.
+- 통합 Markdown 링크 `[라벨](대상)` 규칙:
   - 대상이 `https://` 또는 `http://`로 시작하면 외부 링크
   - 대상이 `/src`, `/data`, `./...`, `../...` 로 시작하면 경로 링크 그대로 연결
   - 그 외는 내부 페이지 링크로 처리되어 `wiki.php?a=view&title=대상`으로 이동
@@ -27,7 +26,7 @@ SyntaxGuide 페이지는 이 파일을 렌더링합니다.
 예)
 - 내부: [Home](Home), [Front](FrontPage)
 - 외부: [OpenAI](https://openai.com)
-- 경로: [/data/syntaxguide.md](/data/syntaxguide.md)
+- 경로: [/src](/src), [/data](/data)
 
 ## 이미지 (Images)
 Markdown 이미지 문법을 사용합니다.
@@ -93,4 +92,5 @@ Markdown 표 문법을 지원합니다(정렬: `:---`, `---:`, `:---:`).
 
 ---
 
-이 문서는 `/data/syntaxguide.md` 한 곳에서 관리됩니다.
+이 문서는 `data/pages/SyntaxGuide.md`로 저장되며, 다른 페이지와 동일한 규칙으로 다뤄집니다.
+

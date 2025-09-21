@@ -130,6 +130,8 @@ function wiki_header($title_page, $subtitle, $current_title) {
       <a href="wiki.php?a=view&amp;title=SyntaxGuide">SyntaxGuide</a>
       <span class="muted">|</span>
       <span class="muted">User: <?php echo htmlspecialchars(wiki_engine_get_current_user(), ENT_QUOTES); ?></span>
+      <a href="wiki.php?a=account">Account</a>
+<?php if (function_exists('wiki_engine_is_admin') && wiki_engine_is_admin(null)) { echo ' <a href="wiki.php?a=users">Users</a>'; } ?>
       <a href="wiki.php?a=logout">Logout</a>
 <?php
       $ct = trim((string)$current_title);
@@ -196,10 +198,10 @@ function wiki_list_recent_changes($limit) {
 }
 if ($a === 'front') {
     $frontTitle = 'FrontPage';
-    $fp_src = wiki_engine_read_canonical_frontpage();
+    $fp_src = wiki_engine_read_page($frontTitle);
     if ($fp_src === '') {
-        $default = "# FrontPage\n\nWelcome to MiniWiki.\n\n- Edit this FrontPage to customize your wiki.\n- See [[SyntaxGuide|Syntax Guide]] for markup. ([View raw](/data/syntaxguide.md))\n";
-        wiki_engine_save_canonical_frontpage($default);
+        $default = "# FrontPage\n\nWelcome to MiniWiki.\n\n- Edit this FrontPage to customize your wiki.\n- See [[SyntaxGuide|Syntax Guide]] for markup.\n";
+        wiki_engine_save_page($frontTitle, $default);
         $fp_src = $default;
     }
     wiki_header('FrontPage', 'Viewing: FrontPage', $frontTitle);
@@ -209,34 +211,6 @@ if ($a === 'front') {
 }
 
 if ($a === 'view') {
-    if ($title === 'SyntaxGuide') {
-        $canon = wiki_engine_read_canonical_syntaxguide();
-        if ($canon === '') {
-            // Seed default SyntaxGuide into data/syntaxguide.md if missing
-            $default = "# Wiki Syntax Guide\n\n" .
-                "## Headings\n" .
-                "# H1\n## H2\n### H3\n\n" .
-                "## Emphasis\n" .
-                "This is *italic*, this is **bold**, and this is **_bold italic_**.\n\n" .
-                "## Inline code\n" .
-                "Use `code()` inline.\n\n" .
-                "## Links\n" .
-                "Internal links: [[Home]] or [[Home|Go Home]].\nExternal links: https://example.com (auto-link).\nUnified: [Label](Home) or [OpenAI](https://openai.com).\n\n" .
-                "## Images\n" .
-                "![Placeholder](https://via.placeholder.com/80)\n\n" .
-                "## Lists\n" .
-                "- First item\n- Second item\n  - Nested child\n1. Numbered one\n2. Numbered two\n\n" .
-                "## Blockquote\n" .
-                "> A quoted line\n> continues here\n\n" .
-                "## Code block\n" .
-                "```\nfunction hello() {\n  return 'world';\n}\n```\n\n" .
-                "---\n\n" .
-                "## Table\n" .
-                "| A | B | C |\n| :--- | :---: | ---: |\n| left | center | right |\n";
-            wiki_engine_save_canonical_syntaxguide($default);
-            $canon = $default;
-        }
-    }
     if ($title === 'SyntaxGuide' && !wiki_engine_exists($title)) {
         if (defined('WIKI_RENDERER') && constant('WIKI_RENDERER') === 'markdown_wiki') {
             $default = "# Wiki Syntax Guide\n\n" .
@@ -295,12 +269,7 @@ if ($a === 'view') {
         }
         wiki_engine_save_page($title, $default);
     }
-    if ($title === 'SyntaxGuide') {
-        $src = wiki_engine_read_canonical_syntaxguide();
-    } else {
-        if ($title === 'FrontPage') { $src = wiki_engine_read_canonical_frontpage(); }
-        else { $src = wiki_engine_read_page($title); }
-    }
+    $src = wiki_engine_read_page($title);
     $subtitle = 'Viewing: ' . $title;
     wiki_header($title, $subtitle, $title);
     if ($src === '') {
@@ -347,9 +316,7 @@ if ($a === 'new') {
 }
 
 if ($a === 'edit') {
-    if ($title === 'SyntaxGuide') { $src = wiki_engine_read_canonical_syntaxguide(); }
-    else if ($title === 'FrontPage') { $src = wiki_engine_read_canonical_frontpage(); }
-    else { $src = wiki_engine_read_page($title); }
+    $src = wiki_engine_read_page($title);
     $subtitle = 'Editing: ' . $title;
     wiki_header($title, $subtitle, $title);
     $token = wiki_engine_csrf_token();
@@ -380,9 +347,7 @@ if ($a === 'save') {
     if (wiki_engine_is_markdown_mode()) {
         $src = wiki_engine_cleanup_quotes_for_markdown($src);
     }
-    if ($title === 'SyntaxGuide') { wiki_engine_save_canonical_syntaxguide($src); }
-    else if ($title === 'FrontPage') { wiki_engine_save_canonical_frontpage($src); }
-    else { wiki_engine_save_page($title, $src); }
+    wiki_engine_save_page($title, $src);
     header('Location: ' . wiki_url('view', $title));
     exit;
 }
@@ -555,6 +520,126 @@ if ($a === 'rename') {
     exit;
 }
 
+if ($a === 'account') {
+    $subtitle = 'Account Settings';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $token = isset($_POST['token']) ? $_POST['token'] : '';
+        if (!wiki_engine_verify_token($token)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid token'; exit; }
+        $old = isset($_POST['old_password']) ? (string)$_POST['old_password'] : '';
+        $new = isset($_POST['new_password']) ? (string)$_POST['new_password'] : '';
+        $new2 = isset($_POST['new_password2']) ? (string)$_POST['new_password2'] : '';
+        $old = wiki_engine_unmagic($old); $new = wiki_engine_unmagic($new); $new2 = wiki_engine_unmagic($new2);
+        if ($new === '' || $new !== $new2) { $change_error = 'New passwords do not match'; }
+        else {
+            $err = '';
+            if (wiki_engine_change_password_self($old, $new, $err)) { $change_ok = true; }
+            else { $change_error = $err; }
+        }
+    }
+    wiki_header('Account', $subtitle, '');
+    $token = wiki_engine_csrf_token();
+?>
+    <h2>Change Password</h2>
+    <?php if (isset($change_ok) && $change_ok): ?>
+      <p class="muted">Password updated.</p>
+    <?php elseif (isset($change_error)): ?>
+      <p class="empty"><?php echo htmlspecialchars($change_error, ENT_QUOTES); ?></p>
+    <?php endif; ?>
+    <form method="post" action="wiki.php?a=account">
+      <input type="hidden" name="token" value="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" />
+      <p><label>Current password<br /><input type="password" name="old_password" /></label></p>
+      <p><label>New password<br /><input type="password" name="new_password" /></label></p>
+      <p><label>Confirm new password<br /><input type="password" name="new_password2" /></label></p>
+      <p><button type="submit">Change Password</button></p>
+    </form>
+<?php
+    wiki_footer();
+    exit;
+}
+
+if ($a === 'users') {
+    if (!function_exists('wiki_engine_is_admin') || !wiki_engine_is_admin(null)) { header('HTTP/1.1 403 Forbidden'); echo 'Admin only'; exit; }
+    $subtitle = 'User Management';
+    $op_msg = '';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $token = isset($_POST['token']) ? $_POST['token'] : '';
+        if (!wiki_engine_verify_token($token)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid token'; exit; }
+        $op = isset($_POST['op']) ? $_POST['op'] : '';
+        if ($op === 'add') {
+            $un = isset($_POST['new_username']) ? (string)$_POST['new_username'] : '';
+            $pw1 = isset($_POST['new_password']) ? (string)$_POST['new_password'] : '';
+            $pw2 = isset($_POST['new_password2']) ? (string)$_POST['new_password2'] : '';
+            $un = wiki_engine_unmagic($un); $pw1 = wiki_engine_unmagic($pw1); $pw2 = wiki_engine_unmagic($pw2);
+            if ($pw1 === '' || $pw1 !== $pw2) { $op_msg = 'New user: passwords do not match'; }
+            else { $err = '';
+                if (wiki_engine_add_user($un, $pw1, $err)) { $op_msg = 'User added: ' . htmlspecialchars($un, ENT_QUOTES); }
+                else { $op_msg = 'Add failed: ' . htmlspecialchars($err, ENT_QUOTES); }
+            }
+        } elseif ($op === 'reset') {
+            $un = isset($_POST['username']) ? (string)$_POST['username'] : '';
+            $pw1 = isset($_POST['reset_password']) ? (string)$_POST['reset_password'] : '';
+            $pw2 = isset($_POST['reset_password2']) ? (string)$_POST['reset_password2'] : '';
+            $un = wiki_engine_unmagic($un); $pw1 = wiki_engine_unmagic($pw1); $pw2 = wiki_engine_unmagic($pw2);
+            if ($pw1 === '' || $pw1 !== $pw2) { $op_msg = 'Reset: passwords do not match'; }
+            else { $err = '';
+                if (wiki_engine_set_password($un, $pw1, $err)) { $op_msg = 'Password reset for ' . htmlspecialchars($un, ENT_QUOTES); }
+                else { $op_msg = 'Reset failed: ' . htmlspecialchars($err, ENT_QUOTES); }
+            }
+        } elseif ($op === 'delete') {
+            $un = isset($_POST['username']) ? (string)$_POST['username'] : '';
+            $un = wiki_engine_unmagic($un);
+            $err = '';
+            if (wiki_engine_delete_user($un, $err)) { $op_msg = 'Deleted user: ' . htmlspecialchars($un, ENT_QUOTES); }
+            else { $op_msg = 'Delete failed: ' . htmlspecialchars($err, ENT_QUOTES); }
+        }
+    }
+    $users = wiki_engine_list_users();
+    wiki_header('Users', $subtitle, '');
+    $token = wiki_engine_csrf_token();
+?>
+    <?php if ($op_msg !== '') { echo '<p class="muted">' . $op_msg . '</p>'; } ?>
+    <h2>Users</h2>
+    <?php if (!count($users)) { echo '<p class="empty">No users.</p>'; } else { ?>
+      <table>
+        <tr><th>User</th><th>Actions</th></tr>
+        <?php for ($i=0; $i<count($users); $i++): $un = $users[$i]; ?>
+          <tr>
+            <td><?php echo htmlspecialchars($un, ENT_QUOTES); ?></td>
+            <td>
+              <form method="post" action="wiki.php?a=users" style="display:inline-block; margin-right:0.5rem;">
+                <input type="hidden" name="token" value="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" />
+                <input type="hidden" name="op" value="delete" />
+                <input type="hidden" name="username" value="<?php echo htmlspecialchars($un, ENT_QUOTES); ?>" />
+                <button type="submit" <?php echo ($un==='admin')? 'disabled' : ''; ?>>Delete</button>
+              </form>
+              <form method="post" action="wiki.php?a=users" style="display:inline-block;">
+                <input type="hidden" name="token" value="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" />
+                <input type="hidden" name="op" value="reset" />
+                <input type="hidden" name="username" value="<?php echo htmlspecialchars($un, ENT_QUOTES); ?>" />
+                <input type="password" name="reset_password" placeholder="New password" />
+                <input type="password" name="reset_password2" placeholder="Confirm" />
+                <button type="submit">Reset</button>
+              </form>
+            </td>
+          </tr>
+        <?php endfor; ?>
+      </table>
+    <?php } ?>
+
+    <h3>Add User</h3>
+    <form method="post" action="wiki.php?a=users">
+      <input type="hidden" name="token" value="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" />
+      <input type="hidden" name="op" value="add" />
+      <p><input type="text" name="new_username" placeholder="Username" /></p>
+      <p><input type="password" name="new_password" placeholder="Password" /></p>
+      <p><input type="password" name="new_password2" placeholder="Confirm password" /></p>
+      <p><button type="submit">Add</button></p>
+    </form>
+<?php
+    wiki_footer();
+    exit;
+}
+
 if ($a === 'login') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $username = isset($_POST['username']) ? (string)$_POST['username'] : '';
@@ -564,7 +649,7 @@ if ($a === 'login') {
         
         if (wiki_engine_verify_login($username, $password)) {
             wiki_engine_login($username);
-            $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'wiki.php';
+            $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'wiki.php?a=front';
             header('Location: ' . $redirect);
             exit;
         } else {
@@ -610,7 +695,6 @@ if ($a === 'login') {
       </div>
       <button type="submit">Login</button>
     </form>
-    <div class="info">Default: admin / passw0rd</div>
   </div>
 </body>
 </html>

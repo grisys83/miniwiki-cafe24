@@ -2,12 +2,11 @@
 
 ## Architecture
 - PHP 4–compatible, no framework, no DB.
-- Router: `public/wiki.php` (actions: front, view, edit, save, all, search, history, rename, delete, new)
+- Router: `public/wiki.php` (actions: front, view, edit, save, all, search, history, rename, delete, new, account, users, login, logout)
 - Engine: `src/wiki_engine.php`
   - Storage
     - Pages: `data/pages/<Title>.md` (Title is `rawurlencode`d)
     - History: `data/history/<Title>/<STAMP>.md`
-    - Canonical: `data/frontpage.md`, `data/syntaxguide.md`
   - Helpers: safe title, read/write (atomic temp file), history save, rename+link update, CSRF token
   - magic_quotes handling + Markdown quote cleanup (outside code)
 - Renderer: `src/wiki_parser.php` → Markdown-only parser with unified links
@@ -30,10 +29,9 @@
   - otherwise → internal page `wiki.php?a=view&title=target`
 - Wiki style: `[[Page]]`, `[[Page|Label]]` remain supported
 
-## Canonical Pages
-- `FrontPage` → `/data/frontpage.md`
-- `SyntaxGuide` → `/data/syntaxguide.md`
-- Router reads/writes these files directly; history still tracked per title.
+## Special Pages
+- `FrontPage` and `SyntaxGuide` are ordinary pages under `data/pages/FrontPage.md` and `data/pages/SyntaxGuide.md`.
+- Router seeds default content if these pages don't exist.
 
 ## Rename + Link Update
 - `wiki_engine_rename_page(old,new,update_links,...)`
@@ -45,8 +43,10 @@
 ## Security
 - Escaping: All text segments are HTML-escaped.
 - External links restricted to `http/https` + `rel="nofollow"` by default.
-- CSRF token for save/delete/rename.
-- Password: single backtick (`) for edit/delete/rename (hardcoded; changeable in code).
+- CSRF token for save/delete/rename/account/users.
+- Account: logged-in user can change own password (`a=account`).
+- Users (admin): list/add/delete/reset passwords (`a=users`).
+- Password: single backtick (`) for edit/delete/rename (legacy; not used when login is enforced).
 - magic_quotes: input normalized; extra backslashes before quotes removed in Markdown mode (outside code)
 
 ## File Layout
@@ -63,4 +63,3 @@
 - Add Markdown extensions (tables are already supported; footnotes/task lists can be added similarly).
 - Implement Markdown link rewriting in `wiki_engine_update_links` if needed.
 - Add simple auth or cookie-based “remember me” for editor.
-

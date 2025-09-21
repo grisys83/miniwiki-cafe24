@@ -3,21 +3,25 @@ MiniWiki (Markdown Wiki for PHP4/Cafe24)
 Overview
 - Lightweight Markdown-only wiki engine for legacy PHP 4 hosting (e.g., Cafe24).
 - No DB, no external libraries; pure PHP 4–compatible code.
-- Canonical pages (FrontPage, SyntaxGuide) are managed as flat files under `/data/`.
+- FrontPage and SyntaxGuide are regular pages under `data/pages/` (no special handling).
 
 🔐 **LOGIN SYSTEM** 🔐
-This wiki uses a session-based login system for complete security:
+This wiki uses a session-based login system:
 - Default admin account: username `admin`, password `passw0rd`
-- Change password by editing `data/users.json`
 - All pages require login (including reading)
 - Session timeout: 3 hours
+- Login attempts: unlimited (no lockout)
+
+Account & Users (UI)
+- Account: logged-in users can change their own password at `wiki.php?a=account`.
+- Users (admin only): list/add/delete users and reset passwords at `wiki.php?a=users`.
+- JSON is still supported directly under `data/users.json` if needed.
 
 Engine
 - File-based wiki engine (PHP4 compatible).
-- Routes: view, edit, save, all pages, search, history, rename, delete.
+- Routes: front, view, edit, save, all pages, search, history, rename, delete, new, login, logout, account, users.
 - Storage:
   - Pages: `data/pages/<Title>.md` (Title is `rawurlencode`d)
-  - Canonical: `data/frontpage.md`, `data/syntaxguide.md`
   - History: `data/history/<Title>/<STAMP>.md`
 - Edit/Delete protection: hardcoded password is a single backtick character: `
 
@@ -93,9 +97,8 @@ Allow from 111.222.333.444  # Additional trusted IP
 Project Layout
 - `src/wiki_parser.php`: Markdown renderer + link rules.
 - `src/wiki_engine.php`: Engine (storage, history, rename, helpers).
-- `public/wiki.php`: Router (view/edit/save/search/history/rename/delete/front).
-- `data/frontpage.md`, `data/syntaxguide.md`: Canonical landing pages.
-- `data/pages/`: User pages `<Title>.md`.
+- `public/wiki.php`: Router (front/view/edit/save/search/history/rename/delete/new/login/logout/account/users).
+- `data/pages/`: Pages `<Title>.md` including `FrontPage.md`, `SyntaxGuide.md`.
 
 Theming
 - Light/Dark theme toggle is available in FrontPage, Syntax guide, and Wiki UI.
@@ -115,15 +118,13 @@ Quick Start
 
 Admin Notes
 - Rename updates wiki-style links (`[[Old]]`, `[[Old|Label]]`) best-effort.
-- FrontPage/SyntaxGuide are canonical under `/data/`; editing those pages writes to those files.
 
 ## User Management
-- Users are stored in `data/users.json`
-- Passwords are MD5 hashed
-- To change admin password:
+- Users are stored in `data/users.json`; passwords are MD5 hashed.
+- Preferred: use the built-in UI — `Account` for changing your own password, `Users` (admin) to add/delete/reset.
+- Manual (optional):
   1. Generate MD5 hash: `echo -n "newpassword" | md5sum`
   2. Edit `data/users.json` and replace the `password_hash` value
-- To add users: manually edit `data/users.json` following the same format
 
 Limitations
 - Minimal Markdown subset (no footnotes or extended syntax).

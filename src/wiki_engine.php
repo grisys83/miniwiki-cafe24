@@ -19,6 +19,293 @@ if (!defined('WIKI_SESSION_TIMEOUT')) {
     define('WIKI_SESSION_TIMEOUT', 10800);
 }
 
+// ---------------- User/Auth (session-based) ----------------
+// users file: data/users.json (e.g. {"admin":{"password_hash":"<md5>","created":"YYYY-mm-dd HH:ii:ss"}})
+
+if (!function_exists('wiki_engine_users_file_path')) {
+    function wiki_engine_users_file_path() {
+        return WIKI_USERS_FILE;
+    }
+}
+
+if (!function_exists('wiki_engine_init_users')) {
+    function wiki_engine_init_users() {
+        $path = wiki_engine_users_file_path();
+        $dir = dirname($path);
+        if (!is_dir($dir)) { wiki_engine_mkdir_p($dir); }
+        if (!file_exists($path) || filesize($path) === 0) {
+            $default = array(
+                'admin' => array(
+                    // default: admin / passw0rd
+                    'password_hash' => 'bed128365216c019988915ed3add75fb',
+                    'created' => date('Y-m-d H:i:s')
+                )
+            );
+            wiki_engine_write_users($default);
+        }
+    }
+}
+
+if (!function_exists('wiki_engine_readfile_all')) {
+    function wiki_engine_readfile_all($file) {
+        $fp = @fopen($file, 'rb'); if (!$fp) return '';
+        $data = '';
+        while (!feof($fp)) { $data .= fread($fp, 8192); }
+        fclose($fp);
+        return $data;
+    }
+}
+
+if (!function_exists('wiki_engine_read_users')) {
+    function wiki_engine_read_users() {
+        $path = wiki_engine_users_file_path();
+        if (!file_exists($path)) { return array(); }
+        $raw = wiki_engine_readfile_all($path);
+        $raw_trim = trim($raw);
+        $out = array();
+        // Prefer JSON if available
+        if (function_exists('json_decode')) {
+            $data = @json_decode($raw_trim, true);
+            if (is_array($data)) {
+                // Accept either {"username":{"password_hash":".."}} or {"users":[{"username":"..","password_hash":".."}]}
+                if (isset($data['users']) && is_array($data['users'])) {
+                    for ($i=0; $i<count($data['users']); $i++) {
+                        $u = $data['users'][$i];
+                        if (isset($u['username']) && isset($u['password_hash'])) {
+                            $out[(string)$u['username']] = array('password_hash' => (string)$u['password_hash']);
+                        }
+                    }
+                } else {
+                    // assume map: username => info
+                    foreach ($data as $name => $info) {
+                        if (is_array($info) && isset($info['password_hash'])) {
+                            $out[(string)$name] = array('password_hash' => (string)$info['password_hash']);
+                        }
+                    }
+                }
+                return $out;
+            }
+            // Safe JSON-ish extraction (PHP4 PCRE friendly)
+            if (preg_match_all('/"([^"\\]+)"\s*:\s*\{([^}]*)\}/s', $raw_trim, $m2)) {
+                for ($i2 = 0; $i2 < count($m2[1]); $i2++) {
+                    $uname = $m2[1][$i2];
+                    $inner = $m2[2][$i2];
+                    if (preg_match('/\"password_hash\"\s*:\s*\"([a-fA-F0-9]{32})\"/s', $inner, $mh2)) {
+                        $out[$uname] = array('password_hash' => strtolower($mh2[1]));
+                    } elseif (preg_match('/"password_hash"\s*:\s*"([a-fA-F0-9]{32})"/s', $inner, $mh3)) {
+                        $out[$uname] = array('password_hash' => strtolower($mh3[1]));
+                    }
+                }
+                if (count($out)) { return $out; }
+            }
+        }
+        // Fallback lightweight parser for {"user":{"password_hash":"<md5>"}, ...}
+        if (strlen($raw_trim) && $raw_trim{0} === '{') {
+            if (preg_match_all('/"([^"\\]+)"\s*:\s*\{([^}]*)\}/s', $raw_trim, $m)) {
+                for ($i=0; $i<count($m[1]); $i++) {
+                    $uname = $m[1][$i];
+                    $inner = $m[2][$i];
+                    if (preg_match('/"password_hash"\s*:\s*"([a-fA-F0-9]{32})"/s', $inner, $mh)) {
+                        $out[$uname] = array('password_hash' => strtolower($mh[1]));
+                    }
+                }
+                if (count($out)) { return $out; }
+            }
+            // Ultra-simple non-regex scan (PHP4 safest)
+            $s = $raw_trim; $len = strlen($s); $pos = 0;
+            while ($pos < $len) {
+                $q1 = strpos($s, '"', $pos); if ($q1 === false) break;
+                $q2 = strpos($s, '"', $q1+1); if ($q2 === false) break;
+                $name = substr($s, $q1+1, $q2-$q1-1);
+                $colon = strpos($s, ':', $q2+1); if ($colon === false) { $pos = $q2+1; continue; }
+                $b1 = strpos($s, '{', $colon+1); if ($b1 === false) { $pos = $colon+1; continue; }
+                $b2 = strpos($s, '}', $b1+1); if ($b2 === false) break;
+                $inner = substr($s, $b1+1, $b2-$b1-1);
+                $k = '"password_hash"';
+                $kp = strpos($inner, $k);
+                if ($kp !== false) {
+                    $v1 = strpos($inner, '"', $kp+strlen($k));
+                    if ($v1 !== false) {
+                        $v2 = strpos($inner, '"', $v1+1);
+                        if ($v2 !== false) {
+                            $val = substr($inner, $v1+1, $v2-$v1-1);
+                            if (preg_match('/^[A-Fa-f0-9]{32}$/', $val)) { $out[$name] = array('password_hash' => strtolower($val)); }
+                        }
+                    }
+                }
+                $pos = $b2 + 1;
+            }
+            if (count($out)) { return $out; }
+        }
+        // Line-based fallback: username:md5
+        $lines = explode("\n", $raw);
+        for ($i=0; $i<count($lines); $i++) {
+            $line = trim($lines[$i]); if ($line === '' || $line{0} === '#') continue;
+            $parts = explode(':', $line, 2);
+            if (count($parts) === 2) {
+                $name = trim($parts[0]); $hash = strtolower(trim($parts[1]));
+                if ($name !== '' && preg_match('/^[a-f0-9]{32}$/', $hash)) { $out[$name] = array('password_hash' => $hash); }
+            }
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('wiki_engine_write_users')) {
+    function wiki_engine_write_users($users_map) {
+        $path = wiki_engine_users_file_path();
+        $dir = dirname($path);
+        if (!is_dir($dir)) { wiki_engine_mkdir_p($dir); }
+        // Normalize to map format {"user":{"password_hash":"..."}}
+        $obj = array();
+        foreach ($users_map as $name => $info) {
+            $hash = isset($info['password_hash']) ? (string)$info['password_hash'] : '';
+            $created = isset($info['created']) ? (string)$info['created'] : date('Y-m-d H:i:s');
+            $obj[(string)$name] = array('password_hash' => $hash, 'created' => $created);
+        }
+        if (function_exists('json_encode')) {
+            $json = json_encode($obj);
+        } else {
+            // Minimal JSON builder
+            $parts = array();
+            foreach ($obj as $name => $info) {
+                $parts[] = '"' . addslashes($name) . '":{' . '"password_hash":"' . addslashes($info['password_hash']) . '","created":"' . addslashes($info['created']) . '"}';
+            }
+            $json = '{' . implode(',', $parts) . '}';
+        }
+        return wiki_engine_write_file($path, $json);
+    }
+}
+
+if (!function_exists('wiki_engine_list_users')) {
+    function wiki_engine_list_users() {
+        $u = wiki_engine_read_users();
+        $names = array();
+        foreach ($u as $name => $info) { $names[] = (string)$name; }
+        sort($names);
+        return $names;
+    }
+}
+
+if (!function_exists('wiki_engine_is_admin')) {
+    function wiki_engine_is_admin($username = null) {
+        if ($username === null || $username === '') {
+            $username = wiki_engine_get_current_user();
+        }
+        // Simple rule: username 'admin' is the admin.
+        return ($username === 'admin');
+    }
+}
+
+if (!function_exists('wiki_engine_set_password')) {
+    function wiki_engine_set_password($username, $new_password, &$error) {
+        $error = '';
+        $username = trim((string)$username);
+        if ($username === '') { $error = 'Username required'; return false; }
+        if ($new_password === '') { $error = 'Password required'; return false; }
+        $users = wiki_engine_read_users();
+        if (!isset($users[$username])) { $error = 'User not found'; return false; }
+        $users[$username]['password_hash'] = strtolower(md5($new_password));
+        if (!isset($users[$username]['created'])) { $users[$username]['created'] = date('Y-m-d H:i:s'); }
+        return wiki_engine_write_users($users);
+    }
+}
+
+if (!function_exists('wiki_engine_change_password_self')) {
+    function wiki_engine_change_password_self($old_password, $new_password, &$error) {
+        $error = '';
+        $username = wiki_engine_get_current_user();
+        if (!wiki_engine_verify_login($username, $old_password)) { $error = 'Current password incorrect'; return false; }
+        return wiki_engine_set_password($username, $new_password, $error);
+    }
+}
+
+if (!function_exists('wiki_engine_add_user')) {
+    function wiki_engine_add_user($username, $password, &$error) {
+        $error = '';
+        $username = trim((string)$username);
+        if ($username === '') { $error = 'Username required'; return false; }
+        if (!preg_match('/^[A-Za-z0-9_\-\.]{1,32}$/', $username)) { $error = 'Invalid username'; return false; }
+        $password = (string)$password;
+        if ($password === '') { $error = 'Password required'; return false; }
+        $users = wiki_engine_read_users();
+        if (isset($users[$username])) { $error = 'User already exists'; return false; }
+        $users[$username] = array('password_hash' => strtolower(md5($password)), 'created' => date('Y-m-d H:i:s'));
+        return wiki_engine_write_users($users);
+    }
+}
+
+if (!function_exists('wiki_engine_delete_user')) {
+    function wiki_engine_delete_user($username, &$error) {
+        $error = '';
+        $username = trim((string)$username);
+        if ($username === '') { $error = 'Username required'; return false; }
+        if ($username === 'admin') { $error = 'Cannot delete admin user'; return false; }
+        $current = wiki_engine_get_current_user();
+        if ($current === $username) { $error = 'Cannot delete current logged-in user'; return false; }
+        $users = wiki_engine_read_users();
+        if (!isset($users[$username])) { $error = 'User not found'; return false; }
+        unset($users[$username]);
+        return wiki_engine_write_users($users);
+    }
+}
+
+if (!function_exists('wiki_engine_verify_login')) {
+    function wiki_engine_verify_login($username, $password) {
+        $username = trim((string)$username);
+        $password = (string)$password;
+        if ($username === '') return false;
+        $users = wiki_engine_read_users();
+        if (!isset($users[$username]) || !isset($users[$username]['password_hash'])) return false;
+        $hash = strtolower($users[$username]['password_hash']);
+        $try = strtolower(md5($password));
+        return ($hash === $try);
+    }
+}
+
+if (!function_exists('wiki_engine_login')) {
+    function wiki_engine_login($username) {
+        if (session_id() === '') { @session_start(); }
+        if (!isset($_SESSION)) { $_SESSION = array(); }
+        $_SESSION['wiki_user'] = (string)$username;
+        $_SESSION['wiki_last_active'] = time();
+    }
+}
+
+if (!function_exists('wiki_engine_logout')) {
+    function wiki_engine_logout() {
+        if (session_id() === '') { @session_start(); }
+        if (!isset($_SESSION)) { $_SESSION = array(); }
+        unset($_SESSION['wiki_user']);
+        unset($_SESSION['wiki_last_active']);
+    }
+}
+
+if (!function_exists('wiki_engine_is_logged_in')) {
+    function wiki_engine_is_logged_in() {
+        if (session_id() === '') { @session_start(); }
+        if (!isset($_SESSION)) { $_SESSION = array(); }
+        if (!isset($_SESSION['wiki_user'])) return false;
+        $last = isset($_SESSION['wiki_last_active']) ? (int)$_SESSION['wiki_last_active'] : 0;
+        $now = time();
+        if ($last > 0 && ($now - $last) > WIKI_SESSION_TIMEOUT) {
+            // expired
+            wiki_engine_logout();
+            return false;
+        }
+        $_SESSION['wiki_last_active'] = $now;
+        return true;
+    }
+}
+
+if (!function_exists('wiki_engine_get_current_user')) {
+    function wiki_engine_get_current_user() {
+        if (session_id() === '') { @session_start(); }
+        if (!isset($_SESSION)) { $_SESSION = array(); }
+        return isset($_SESSION['wiki_user']) ? (string)$_SESSION['wiki_user'] : 'guest';
+    }
+}
+
 if (!function_exists('wiki_engine_mkdir_p')) {
     function wiki_engine_mkdir_p($path, $mode = 0775) {
         if (is_dir($path)) return true;
@@ -519,4 +806,3 @@ if (!function_exists('wiki_engine_save_canonical_frontpage')) {
         return wiki_engine_write_file($path, $content);
     }
 }
-
