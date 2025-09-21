@@ -50,6 +50,45 @@ Security Notes
 - Links include `rel="nofollow"` by default (configurable).
 - Edits require the fixed password: backtick character (`). Change `WIKI_EDIT_PASSWORD` in `src/wiki_engine.php`.
 
+### IP Access Restriction (Recommended)
+For additional security, restrict access to specific IP addresses using `.htaccess`:
+
+1. Create `.htaccess` file in your `public/` directory
+2. Add the following configuration:
+
+```apache
+# Allow access only from specific IPs
+Order Deny,Allow
+Deny from all
+Allow from 123.456.789.0    # Your home/office IP
+Allow from 111.222.333.444  # Additional trusted IP
+
+# For Cafe24 hosting, you might need this format instead:
+<RequireAll>
+    Require ip 123.456.789.0
+    Require ip 111.222.333.444
+</RequireAll>
+```
+
+3. For edit-only restriction (allow public viewing but restrict editing):
+
+```apache
+# Restrict only edit actions
+<FilesMatch "wiki\.php">
+    <If "%{QUERY_STRING} =~ /a=(edit|save|delete|rename)/">
+        Order Deny,Allow
+        Deny from all
+        Allow from 123.456.789.0
+    </If>
+</FilesMatch>
+```
+
+4. To find your current IP address:
+   - Visit: https://whatismyipaddress.com/
+   - Or run: `curl ifconfig.me` in terminal
+
+**Note**: Replace example IPs with your actual IP addresses. Contact your hosting provider if `.htaccess` rules don't work as expected.
+
 Project Layout
 - `src/wiki_parser.php`: Markdown renderer + link rules.
 - `src/wiki_engine.php`: Engine (storage, history, rename, helpers).

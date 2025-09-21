@@ -1,0 +1,83 @@
+# MiniWiki Security Configuration Sample
+# Rename this file to .htaccess to activate
+# 
+# IMPORTANT: Replace the example IP addresses with your actual IP addresses
+# To find your IP: visit https://whatismyipaddress.com/
+
+# ==================================================================
+# Option 1: Complete Access Restriction (Recommended for private wikis)
+# ==================================================================
+
+# Allow access only from specific IPs
+Order Deny,Allow
+Deny from all
+Allow from 123.456.789.0    # Replace with your home IP
+Allow from 111.222.333.444  # Replace with your office IP
+# Add more Allow lines as needed
+
+# ==================================================================
+# Option 2: Apache 2.4+ Syntax (for newer servers/Cafe24)
+# ==================================================================
+
+# Uncomment below if the above doesn't work:
+# <RequireAll>
+#     Require ip 123.456.789.0
+#     Require ip 111.222.333.444
+# </RequireAll>
+
+# ==================================================================
+# Option 3: Edit-Only Restriction (public read, private write)
+# ==================================================================
+
+# Uncomment below to allow public viewing but restrict editing:
+# <FilesMatch "wiki\.php">
+#     <If "%{QUERY_STRING} =~ /a=(edit|save|delete|rename)/">
+#         Order Deny,Allow
+#         Deny from all
+#         Allow from 123.456.789.0
+#         Allow from 111.222.333.444
+#     </If>
+# </FilesMatch>
+
+# ==================================================================
+# Additional Security Headers (Optional but recommended)
+# ==================================================================
+
+# Prevent clickjacking
+Header always append X-Frame-Options SAMEORIGIN
+
+# XSS Protection
+Header set X-XSS-Protection "1; mode=block"
+
+# Prevent MIME type sniffing
+Header set X-Content-Type-Options "nosniff"
+
+# ==================================================================
+# PHP Settings for Cafe24 (if needed)
+# ==================================================================
+
+# Increase memory limit if needed
+# php_value memory_limit 128M
+
+# Set timezone
+# php_value date.timezone "Asia/Seoul"
+
+# Error reporting (disable in production)
+# php_flag display_errors off
+# php_flag log_errors on
+
+# ==================================================================
+# File Protection
+# ==================================================================
+
+# Protect .htaccess file itself
+<Files .htaccess>
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Protect data directory from direct access
+<FilesMatch "\.(md|txt|bak)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
