@@ -5,12 +5,12 @@ Overview
 - No DB, no external libraries; pure PHP 4–compatible code.
 - Canonical pages (FrontPage, SyntaxGuide) are managed as flat files under `/data/`.
 
-⚠️ **SECURITY CONFIGURATION REQUIRED** ⚠️
-Before deploying, you MUST change the default password:
-1. Open `src/wiki_engine.php`
-2. Find line 16: `define('WIKI_EDIT_PASSWORD', '`');`
-3. Replace the backtick (`) with your secure password
-4. Save the file
+🔐 **LOGIN SYSTEM** 🔐
+This wiki uses a session-based login system for complete security:
+- Default admin account: username `admin`, password `passw0rd`
+- Change password by editing `data/users.json`
+- All pages require login (including reading)
+- Session timeout: 3 hours
 
 Engine
 - File-based wiki engine (PHP4 compatible).
@@ -48,7 +48,8 @@ Security Notes
 - All non-markup text is HTML-escaped.
 - External links are restricted to `http/https`.
 - Links include `rel="nofollow"` by default (configurable).
-- Edits require the fixed password: backtick character (`). Change `WIKI_EDIT_PASSWORD` in `src/wiki_engine.php`.
+- Complete login protection: all access requires authentication.
+- Session-based security with 3-hour timeout.
 
 ### IP Access Restriction (Recommended)
 For additional security, restrict access to specific IP addresses using `.htaccess`:
@@ -105,15 +106,24 @@ Requirements
 - No database, no extensions required beyond PCRE (standard on PHP 4.x).
 
 Quick Start
-1. **IMPORTANT**: Change the default password in `src/wiki_engine.php` line 16
-2. Upload the repository (e.g., `public/` under `public_html/`).
-3. Ensure `data/` is writable (`chmod -R 775 data/`).
-4. Visit `public/` → FrontPage.
-5. Edit pages via the top action links (using your configured password).
+1. Upload the repository (e.g., `public/` under `public_html/`).
+2. Ensure `data/` is writable (`chmod -R 775 data/`).
+3. Visit `public/` → Login page will appear automatically.
+4. Login with: username `admin`, password `passw0rd`
+5. **IMPORTANT**: Change the default password by editing `data/users.json`
+6. All wiki features are now available after login.
 
 Admin Notes
 - Rename updates wiki-style links (`[[Old]]`, `[[Old|Label]]`) best-effort.
 - FrontPage/SyntaxGuide are canonical under `/data/`; editing those pages writes to those files.
+
+## User Management
+- Users are stored in `data/users.json`
+- Passwords are MD5 hashed
+- To change admin password:
+  1. Generate MD5 hash: `echo -n "newpassword" | md5sum`
+  2. Edit `data/users.json` and replace the `password_hash` value
+- To add users: manually edit `data/users.json` following the same format
 
 Limitations
 - Minimal Markdown subset (no footnotes or extended syntax).

@@ -11,9 +11,12 @@ if (!defined('WIKI_RENDERER')) {
     // 'markdown_wiki' (default) or 'wiki'
     define('WIKI_RENDERER', 'markdown_wiki');
 }
-if (!defined('WIKI_EDIT_PASSWORD')) {
-    // Simple global edit/delete password (change as needed)
-    define('WIKI_EDIT_PASSWORD', '`');
+if (!defined('WIKI_USERS_FILE')) {
+    define('WIKI_USERS_FILE', dirname(__FILE__) . '/../data/users.json');
+}
+if (!defined('WIKI_SESSION_TIMEOUT')) {
+    // 3 hours = 10800 seconds
+    define('WIKI_SESSION_TIMEOUT', 10800);
 }
 
 if (!function_exists('wiki_engine_mkdir_p')) {

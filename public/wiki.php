@@ -7,10 +7,19 @@ require_once(dirname(__FILE__) . '/../src/wiki_engine.php');
 wiki_engine_mkdir_p(WIKI_DATA_DIR);
 wiki_engine_mkdir_p(WIKI_HISTORY_DIR);
 
+// Initialize users file
+wiki_engine_init_users();
+
 // Routing params
 $a = isset($_GET['a']) ? $_GET['a'] : 'view';
 $title = isset($_GET['title']) ? (string)$_GET['title'] : 'Home';
 $title = wiki_engine_safe_title($title);
+
+// Check login for all actions except login itself
+if ($a !== 'login' && !wiki_engine_is_logged_in()) {
+    header('Location: wiki.php?a=login');
+    exit;
+}
 
 // Helper to render standard header/footer
 function wiki_header($title_page, $subtitle, $current_title) {
@@ -119,6 +128,9 @@ function wiki_header($title_page, $subtitle, $current_title) {
       <a href="wiki.php?a=all">TitleIndex</a>
       <a href="wiki.php?a=recent">RecentChanges</a>
       <a href="wiki.php?a=view&amp;title=SyntaxGuide">SyntaxGuide</a>
+      <span class="muted">|</span>
+      <span class="muted">User: <?php echo htmlspecialchars(wiki_engine_get_current_user(), ENT_QUOTES); ?></span>
+      <a href="wiki.php?a=logout">Logout</a>
 <?php
       $ct = trim((string)$current_title);
       if ($ct !== '') {
@@ -345,8 +357,6 @@ if ($a === 'edit') {
     <form method="post" action="<?php echo htmlspecialchars(wiki_url('save', $title), ENT_QUOTES); ?>">
       <input type="hidden" name="token" value="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" />
       <p class="muted">Page: <strong><?php echo htmlspecialchars($title, ENT_QUOTES); ?></strong></p>
-      <p class="muted">Password required to save:</p>
-      <p><input type="password" name="pw" placeholder="Password" /></p>
       <textarea name="src" spellcheck="false"><?php echo htmlspecialchars($src, ENT_QUOTES); ?></textarea>
       <p>
         <button type="submit">Save</button>
@@ -362,8 +372,7 @@ if ($a === 'save') {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { header('Location: ' . wiki_url('view', $title)); exit; }
     $token = isset($_POST['token']) ? $_POST['token'] : '';
     if (!wiki_engine_verify_token($token)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid token'; exit; }
-    $pw = isset($_POST['pw']) ? (string)$_POST['pw'] : '';
-    if (!wiki_engine_check_password($pw)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid password'; exit; }
+    if (!wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
     $src = isset($_POST['src']) ? (string)$_POST['src'] : '';
     // Undo magic_quotes_gpc so backslashes don't accumulate
     $src = wiki_engine_unmagic($src);
@@ -400,10 +409,8 @@ if ($a === 'delete') {
     $subtitle = 'Delete: ' . $title;
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = isset($_POST['token']) ? $_POST['token'] : '';
-        $pw = isset($_POST['pw']) ? (string)$_POST['pw'] : '';
-        $pw = wiki_engine_unmagic($pw);
         if (!wiki_engine_verify_token($token)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid token'; exit; }
-        if (!wiki_engine_check_password($pw)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid password'; exit; }
+        if (!wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
         wiki_engine_delete_page($title);
         header('Location: ' . 'wiki.php?a=all');
         exit;
@@ -418,7 +425,6 @@ if ($a === 'delete') {
       <input type="hidden" name="token" value="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" />
       <p>Delete page <strong><?php echo htmlspecialchars($title, ENT_QUOTES); ?></strong>?</p>
       <p class="muted">This removes the current page file but keeps a copy in history.</p>
-      <p><input type="password" name="pw" placeholder="Password" /></p>
       <p>
         <button type="submit" style="background:#3a0000;border-color:#550000">Delete</button>
         <a class="muted" href="<?php echo htmlspecialchars(wiki_url('view', $title), ENT_QUOTES); ?>">Cancel</a>
@@ -499,16 +505,14 @@ if ($a === 'rename') {
     $subtitle = 'Rename: ' . $title;
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = isset($_POST['token']) ? $_POST['token'] : '';
-        $pw = isset($_POST['pw']) ? (string)$_POST['pw'] : '';
         $new_title = isset($_POST['new_title']) ? (string)$_POST['new_title'] : '';
         $update_links = isset($_POST['update_links']) && $_POST['update_links'] === '1';
         $leave_stub = isset($_POST['leave_stub']) ? ($_POST['leave_stub'] === '1') : true;
         $update_limit = isset($_POST['update_limit']) ? (int)$_POST['update_limit'] : 0;
         // Undo magic quotes on inputs
-        $pw = wiki_engine_unmagic($pw);
         $new_title = wiki_engine_unmagic($new_title);
         if (!wiki_engine_verify_token($token)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid token'; exit; }
-        if (!wiki_engine_check_password($pw)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid password'; exit; }
+        if (!wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
         $err = '';
         if (wiki_engine_rename_page($title, $new_title, $update_links, $err, $leave_stub, $update_limit)) {
             // Show summary page
@@ -541,7 +545,6 @@ if ($a === 'rename') {
       <p><label><input type="checkbox" name="update_links" value="1" checked /> Update links in other pages</label></p>
       <p><label><input type="checkbox" name="leave_stub" value="1" checked /> Leave redirect stub at old title</label></p>
       <p><label>Update limit per request (optional): <input type="text" name="update_limit" size="6" placeholder="e.g. 50" /></label></p>
-      <p><input type="password" name="pw" placeholder="Password" /></p>
       <p>
         <button type="submit">Rename</button>
         <a class="muted" href="<?php echo htmlspecialchars(wiki_url('view', $title), ENT_QUOTES); ?>">Cancel</a>
@@ -549,6 +552,75 @@ if ($a === 'rename') {
     </form>
 <?php
     wiki_footer();
+    exit;
+}
+
+if ($a === 'login') {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $username = isset($_POST['username']) ? (string)$_POST['username'] : '';
+        $password = isset($_POST['password']) ? (string)$_POST['password'] : '';
+        $username = wiki_engine_unmagic($username);
+        $password = wiki_engine_unmagic($password);
+        
+        if (wiki_engine_verify_login($username, $password)) {
+            wiki_engine_login($username);
+            $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'wiki.php';
+            header('Location: ' . $redirect);
+            exit;
+        } else {
+            $login_error = 'Invalid username or password';
+        }
+    }
+    
+    // Show login form
+?>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login - Wiki</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; background: #f6f6f6; }
+    .login-container { max-width: 400px; margin: 100px auto; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .login-title { text-align: center; margin-bottom: 2rem; color: #333; }
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+    input[type=text], input[type=password] { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; }
+    button { width: 100%; padding: 0.75rem; background: #007cba; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
+    button:hover { background: #005a87; }
+    .error { color: #d63384; margin-bottom: 1rem; text-align: center; }
+    .info { color: #666; font-size: 0.9rem; text-align: center; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <h1 class="login-title">MiniWiki Login</h1>
+    <?php if (isset($login_error)): ?>
+      <div class="error"><?php echo htmlspecialchars($login_error, ENT_QUOTES); ?></div>
+    <?php endif; ?>
+    <form method="post" action="wiki.php?a=login">
+      <div class="form-group">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required />
+      </div>
+      <div class="form-group">
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required />
+      </div>
+      <button type="submit">Login</button>
+    </form>
+    <div class="info">Default: admin / passw0rd</div>
+  </div>
+</body>
+</html>
+<?php
+    exit;
+}
+
+if ($a === 'logout') {
+    wiki_engine_logout();
+    header('Location: wiki.php?a=login');
     exit;
 }
 
