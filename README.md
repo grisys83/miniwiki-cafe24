@@ -5,6 +5,13 @@ Overview
 - No DB, no external libraries; pure PHP 4–compatible code.
 - Canonical pages (FrontPage, SyntaxGuide) are managed as flat files under `/data/`.
 
+⚠️ **SECURITY CONFIGURATION REQUIRED** ⚠️
+Before deploying, you MUST change the default password:
+1. Open `src/wiki_engine.php`
+2. Find line 16: `define('WIKI_EDIT_PASSWORD', '`');`
+3. Replace the backtick (`) with your secure password
+4. Save the file
+
 Engine
 - File-based wiki engine (PHP4 compatible).
 - Routes: view, edit, save, all pages, search, history, rename, delete.
@@ -43,13 +50,12 @@ Security Notes
 - Links include `rel="nofollow"` by default (configurable).
 - Edits require the fixed password: backtick character (`). Change `WIKI_EDIT_PASSWORD` in `src/wiki_engine.php`.
 
- Project Layout
+Project Layout
 - `src/wiki_parser.php`: Markdown renderer + link rules.
 - `src/wiki_engine.php`: Engine (storage, history, rename, helpers).
 - `public/wiki.php`: Router (view/edit/save/search/history/rename/delete/front).
 - `data/frontpage.md`, `data/syntaxguide.md`: Canonical landing pages.
 - `data/pages/`: User pages `<Title>.md`.
-- `scripts/convert_txt_to_md.php`: Legacy `.txt` → `.md` converter.
 
 Theming
 - Light/Dark theme toggle is available in FrontPage, Syntax guide, and Wiki UI.
@@ -59,12 +65,12 @@ Requirements
 - PHP 4.3+ (tested for compatibility in syntax; uses `preg_*` and `htmlspecialchars`).
 - No database, no extensions required beyond PCRE (standard on PHP 4.x).
 
- Quick Start
-1. Upload the repository (e.g., `public/` under `public_html/`).
-2. Ensure `data/` is writable (`chmod -R 775 data/`).
-3. Visit `public/` → FrontPage.
-4. Edit pages via the top action links (password: `).
-5. (Optional) Convert legacy `.txt` pages: `php scripts/convert_txt_to_md.php`.
+Quick Start
+1. **IMPORTANT**: Change the default password in `src/wiki_engine.php` line 16
+2. Upload the repository (e.g., `public/` under `public_html/`).
+3. Ensure `data/` is writable (`chmod -R 775 data/`).
+4. Visit `public/` → FrontPage.
+5. Edit pages via the top action links (using your configured password).
 
 Admin Notes
 - Rename updates wiki-style links (`[[Old]]`, `[[Old|Label]]`) best-effort.
@@ -75,8 +81,6 @@ Limitations
 - Rename does not yet rewrite Markdown `[label](Page)` targets — only `[[Page]]` forms.
 - For very large sites, run link updates in batches (rename UI has a per-request limit).
 
-Migration (from `.txt`)
-- Run: `php scripts/convert_txt_to_md.php` (add `--dry-run` to simulate).
 
 License
 - Provided as-is for legacy hosting compatibility. Use at your own discretion.
