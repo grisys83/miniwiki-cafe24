@@ -1,13 +1,1 @@
-# Sensitive and runtime data
-data/users.json
-data/history/
-
-# Debug/diagnostic scripts (should not be deployed)
-public/md5test.php
-public/userstest.php
-
-# OS/editor noise
-.DS_Store
-Thumbs.db
-*.swp
-
+*.*

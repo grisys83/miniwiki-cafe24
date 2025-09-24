@@ -4,18 +4,20 @@ Overview
 - Lightweight Markdown-only wiki engine for legacy PHP 4 hosting (e.g., Cafe24).
 - No DB, no external libraries; pure PHP 4–compatible code.
 - FrontPage and SyntaxGuide are regular pages under `data/pages/` (no special handling).
+- Loginless mode by default; secure via IP allowlist (see below).
 
-🔐 **LOGIN SYSTEM** 🔐
-This wiki uses a session-based login system:
-- Default admin account: username `admin`, password `passw0rd`
-- All pages require login (including reading)
-- Session timeout: 3 hours
-- Login attempts: unlimited (no lockout)
+🔐 Security Modes
+- Loginless (default): No application login. Protect access using server IP allowlist (`.htaccess`).
+- Login-enabled (optional): Session-based login system.
+  - Default admin: `admin` / `passw0rd`
+  - To enable login, set `WIKI_REQUIRE_LOGIN` to `true` in `public/wiki.php`.
+  - Session timeout: 3 hours
 
 Account & Users (UI)
-- Account: logged-in users can change their own password at `wiki.php?a=account`.
-- Users (admin only): list/add/delete users and reset passwords at `wiki.php?a=users`.
-- JSON is still supported directly under `data/users.json` if needed.
+- Available only when login is enabled.
+- Account: `wiki.php?a=account` (self password change)
+- Users (admin only): `wiki.php?a=users` (list/add/delete/reset)
+- You may still edit `data/users.json` directly if needed.
 
 Engine
 - File-based wiki engine (PHP4 compatible).
@@ -26,7 +28,12 @@ Engine
 - Edit/Delete protection: hardcoded password is a single backtick character: `
 
 Rendering
-- Markdown-only renderer with tables, fenced code, lists, headings, images, emphasis.
+- Markdown renderer with tables, fenced code, lists, headings, images, emphasis.
+- Extensions: task list items (`- [ ]`, `- [x]`), footnotes (`[^id]` with definitions), link titles in `[text](url "title")`.
+- Images: `![alt](url)` supports:
+  - External `http/https` URLs
+  - Relative paths under `data/` — served via `wiki.php?a=asset&path=...`
+  - Bare filenames default to `data/images/` (e.g., `![곰](bear1.png)` → `data/images/bear1.png`)
 - Links (unified rule using Markdown syntax): `[label](target)`
   - `https?://…` → external link
   - `/src`, `/data`, `./…`, `../…` → path link as-is
@@ -41,6 +48,13 @@ Supported Syntax (Markdown)
 - Lists `-`/`+`/`*` and `1.`; blockquotes `>`; horizontal rules
 - Fenced code blocks ``` ```; tables with alignment (`:---`, `---:`, `:---:`)
 - Images: `![alt](url)`
+  - External `http/https` or relative to `data/` (e.g., `img/logo.png`)
+ - Task list items: `- [ ] Todo`, `- [x] Done`
+ - Footnotes: `[^id]` with definitions `[^id]: text` (indented continuation supported)
+ - Link titles: `[text](url "title")` or `[text](url 'title')`
+ - Image titles: `![alt](url "title")`
+ - Setext headings: `Heading` + underline `===` (H1) or `---` (H2)
+ - Language-tagged fences: ```` ```js ```` renders `<pre class="lang-js">…</pre>`
 - Line breaks: a single newline inside a paragraph becomes `<br />` (configurable)
 
 Tables (example)
@@ -56,7 +70,7 @@ Security Notes
 - Session-based security with 3-hour timeout.
 
 ### IP Access Restriction (Recommended)
-For additional security, restrict access to specific IP addresses using `.htaccess`:
+When running in loginless mode (default), restrict access to specific IP addresses using `.htaccess`:
 
 1. Create `.htaccess` file in your `public/` directory
 2. Add the following configuration:
@@ -75,7 +89,7 @@ Allow from 111.222.333.444  # Additional trusted IP
 </RequireAll>
 ```
 
-3. For edit-only restriction (allow public viewing but restrict editing):
+3. (Optional) If you enable login and instead want IP restriction for only edit actions:
 
 ```apache
 # Restrict only edit actions
@@ -111,10 +125,9 @@ Requirements
 Quick Start
 1. Upload the repository (e.g., `public/` under `public_html/`).
 2. Ensure `data/` is writable (`chmod -R 775 data/`).
-3. Visit `public/` → Login page will appear automatically.
-4. Login with: username `admin`, password `passw0rd`
-5. **IMPORTANT**: Change the default password by editing `data/users.json`
-6. All wiki features are now available after login.
+3. Add an `.htaccess` IP allowlist under `public/` (see above) to protect the site.
+4. Visit `public/` — no login required by default.
+5. (Optional) To enable login, set `WIKI_REQUIRE_LOGIN` to `true` in `public/wiki.php`, then log in as `admin / passw0rd` and change the password.
 
 Admin Notes
 - Rename updates wiki-style links (`[[Old]]`, `[[Old|Label]]`) best-effort.
@@ -127,10 +140,31 @@ Admin Notes
   2. Edit `data/users.json` and replace the `password_hash` value
 
 Limitations
-- Minimal Markdown subset (no footnotes or extended syntax).
+- Minimal Markdown subset with selected extensions (tables, task lists, footnotes, link titles). Other extended syntaxes like strikethrough, reference-style links, Setext headings, and language-tagged code fences are not supported.
 - Rename does not yet rewrite Markdown `[label](Page)` targets — only `[[Page]]` forms.
 - For very large sites, run link updates in batches (rename UI has a per-request limit).
 
+
+## Login Toggle Code Map
+Use this map to locate the login toggle and related conditionals. Line numbers may shift slightly with edits; they are indicative.
+
+- `public/wiki.php:7` — Define toggle: `define('WIKI_REQUIRE_LOGIN', false)`
+- `public/index.php:6` — Same toggle for entrypoint
+- `public/wiki.php:21` — Login enforcement wrapper; redirects to login only when `WIKI_REQUIRE_LOGIN` is true
+- `public/wiki.php:195` — Top nav: account/users/logout shown only when `WIKI_REQUIRE_LOGIN` is true
+- `public/wiki.php:407` — Save (`a=save`): login required check guarded by `WIKI_REQUIRE_LOGIN`
+- `public/wiki.php:443` — Delete (`a=delete` POST): login required check guarded by `WIKI_REQUIRE_LOGIN`
+- `public/wiki.php:545` — Rename (`a=rename` POST): login required check guarded by `WIKI_REQUIRE_LOGIN`
+- `public/wiki.php:588` — Account route hidden when login disabled (404)
+- `public/wiki.php:626` — Users route hidden when login disabled (404)
+- `public/wiki.php:711` — Login route redirects to FrontPage when login disabled
+- `public/wiki.php:773` — Logout route: behavior differs by toggle
+- `public/index.php:11` — If login disabled, redirect straight to FrontPage; otherwise go to login if not signed in
+
+Notes
+- Users file is still initialized on boot: `public/wiki.php:14`, `public/index.php:9`.
+- CSRF token checks remain active for write actions regardless of the toggle.
+- Image assets (`a=asset`) are unaffected by the toggle; they follow overall access control (IP allowlist) and file-type checks.
 
 License
 - Provided as-is for legacy hosting compatibility. Use at your own discretion.

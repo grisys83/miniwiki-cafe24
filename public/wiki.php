@@ -3,6 +3,9 @@ header('Content-Type: text/html; charset=utf-8');
 require_once(dirname(__FILE__) . '/../src/wiki_parser.php');
 require_once(dirname(__FILE__) . '/../src/wiki_engine.php');
 
+// Toggle: require login or not (default: no login; rely on .htaccess IP allowlist)
+if (!defined('WIKI_REQUIRE_LOGIN')) { define('WIKI_REQUIRE_LOGIN', false); }
+
 // Ensure data directories exist
 wiki_engine_mkdir_p(WIKI_DATA_DIR);
 wiki_engine_mkdir_p(WIKI_HISTORY_DIR);
@@ -15,9 +18,69 @@ $a = isset($_GET['a']) ? $_GET['a'] : 'view';
 $title = isset($_GET['title']) ? (string)$_GET['title'] : 'Home';
 $title = wiki_engine_safe_title($title);
 
-// Check login for all actions except login itself
-if ($a !== 'login' && !wiki_engine_is_logged_in()) {
-    header('Location: wiki.php?a=login');
+// Check login for all actions except login itself (only if required)
+if (WIKI_REQUIRE_LOGIN) {
+    if ($a !== 'login' && !wiki_engine_is_logged_in()) {
+        header('Location: wiki.php?a=login');
+        exit;
+    }
+}
+
+// Serve image assets from data/ and its subpaths: wiki.php?a=asset&path=relative/path.png
+if ($a === 'asset') {
+    $req = isset($_GET['path']) ? (string)$_GET['path'] : '';
+    $req = wiki_engine_unmagic($req);
+    $req = str_replace('\\', '/', $req);
+    if (substr($req, 0, 2) === './') { $req = substr($req, 2); }
+    if (substr($req, 0, 1) === '/') { $req = substr($req, 1); }
+
+    $data_root = realpath(dirname(__FILE__) . '/../data');
+    if ($data_root === false) { header('HTTP/1.1 404 Not Found'); exit; }
+
+    // Try direct under data/
+    $target = realpath($data_root . '/' . $req);
+    if (!($target !== false && strpos($target, $data_root) === 0 && is_file($target))) {
+        // Fallback to data/images/
+        if (substr($req, 0, 7) !== 'images/') {
+            $try = realpath($data_root . '/images/' . $req);
+            if ($try !== false && strpos($try, $data_root) === 0 && is_file($try)) {
+                $target = $try;
+            } else {
+                $target = false;
+            }
+        } else {
+            $target = false;
+        }
+    }
+
+    if ($target === false) {
+        header('HTTP/1.1 404 Not Found');
+        echo 'Not found';
+        exit;
+    }
+
+    // Only allow common image types
+    $ext = strtolower(pathinfo($target, PATHINFO_EXTENSION));
+    $mime = '';
+    if ($ext === 'png') { $mime = 'image/png'; }
+    else if ($ext === 'jpg' || $ext === 'jpeg') { $mime = 'image/jpeg'; }
+    else if ($ext === 'gif') { $mime = 'image/gif'; }
+    else if ($ext === 'webp') { $mime = 'image/webp'; }
+    else if ($ext === 'svg') { $mime = 'image/svg+xml'; }
+    else if ($ext === 'bmp') { $mime = 'image/bmp'; }
+    else if ($ext === 'ico') { $mime = 'image/x-icon'; }
+    if ($mime === '') { header('HTTP/1.1 404 Not Found'); echo 'Unsupported type'; exit; }
+
+    @header('Content-Type: ' . $mime);
+    $len = @filesize($target);
+    if ($len !== false) { @header('Content-Length: ' . $len); }
+    @header('Cache-Control: public, max-age=86400');
+
+    $fp = @fopen($target, 'rb');
+    if ($fp) {
+        while (!feof($fp)) { echo fread($fp, 8192); }
+        fclose($fp);
+    }
     exit;
 }
 
@@ -66,16 +129,21 @@ function wiki_header($title_page, $subtitle, $current_title) {
     main { min-height: calc(100vh - 60px); }
     .content { padding: 1rem 1.25rem; background: var(--content-bg); color: var(--text); }
     .content a { color: var(--link); }
+    /* Make images responsive (shrink to container on small screens) */
+    .content img { max-width: 100%; height: auto; }
     .content pre { background: var(--pre-bg); color: var(--pre-text); padding: 0.75rem; border-radius: 6px; overflow: auto; }
     .content code { background: var(--code-bg); color: var(--code-text); padding: 0 0.25rem; border-radius: 4px; }
     .content blockquote { border-left: 4px solid var(--bq-border); background: var(--bq-bg); color: var(--bq-text); margin: 0; padding: 0.5rem 1rem; }
     .content table { border-collapse: collapse; width: 100%; background: transparent; }
     .content th, .content td { border: 1px solid var(--table-border); padding: 0.5rem; text-align: left; }
     .content th { background: var(--th-bg); color: var(--th-text); }
+    /* Reduce list indentation to ~50% of browser default */
+    .content ul, .content ol { margin-left: 0; padding-left: 1.25rem; }
+    .content li ul, .content li ol { margin-left: 1.25rem; }
     .toolbar { margin: 0 0 1rem 0; display: flex; gap: 0.5rem; }
     .toolbar a, .toolbar button { background: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--btn-border); padding: 0.4rem 0.6rem; border-radius: 6px; text-decoration: none; }
-    textarea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 8px; padding: 0.75rem; }
-    input[type=text], input[type=password] { width: 100%; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 6px; padding: 0.4rem 0.6rem; }
+    textarea { width: 100%; height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 8px; padding: 0.75rem; box-sizing: border-box; }
+    input[type=text], input[type=password] { width: 100%; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 6px; padding: 0.4rem 0.6rem; box-sizing: border-box; }
     header .nav form.search { margin-left: auto; display: flex; gap: 0.25rem; }
     header .nav form.search input[type=text] { width: 220px; }
     header .nav form.newpage { display: none; align-items: center; gap: 0.25rem; }
@@ -129,10 +197,12 @@ function wiki_header($title_page, $subtitle, $current_title) {
       <a href="wiki.php?a=recent">RecentChanges</a>
       <a href="wiki.php?a=view&amp;title=SyntaxGuide">SyntaxGuide</a>
       <span class="muted">|</span>
+<?php if (defined('WIKI_REQUIRE_LOGIN') && WIKI_REQUIRE_LOGIN): ?>
       <span class="muted">User: <?php echo htmlspecialchars(wiki_engine_get_current_user(), ENT_QUOTES); ?></span>
       <a href="wiki.php?a=account">Account</a>
 <?php if (function_exists('wiki_engine_is_admin') && wiki_engine_is_admin(null)) { echo ' <a href="wiki.php?a=users">Users</a>'; } ?>
       <a href="wiki.php?a=logout">Logout</a>
+<?php endif; ?>
 <?php
       $ct = trim((string)$current_title);
       if ($ct !== '') {
@@ -339,7 +409,7 @@ if ($a === 'save') {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { header('Location: ' . wiki_url('view', $title)); exit; }
     $token = isset($_POST['token']) ? $_POST['token'] : '';
     if (!wiki_engine_verify_token($token)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid token'; exit; }
-    if (!wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
+    if (defined('WIKI_REQUIRE_LOGIN') && WIKI_REQUIRE_LOGIN && !wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
     $src = isset($_POST['src']) ? (string)$_POST['src'] : '';
     // Undo magic_quotes_gpc so backslashes don't accumulate
     $src = wiki_engine_unmagic($src);
@@ -375,7 +445,7 @@ if ($a === 'delete') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = isset($_POST['token']) ? $_POST['token'] : '';
         if (!wiki_engine_verify_token($token)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid token'; exit; }
-        if (!wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
+        if (defined('WIKI_REQUIRE_LOGIN') && WIKI_REQUIRE_LOGIN && !wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
         wiki_engine_delete_page($title);
         header('Location: ' . 'wiki.php?a=all');
         exit;
@@ -477,7 +547,7 @@ if ($a === 'rename') {
         // Undo magic quotes on inputs
         $new_title = wiki_engine_unmagic($new_title);
         if (!wiki_engine_verify_token($token)) { header('HTTP/1.1 403 Forbidden'); echo 'Invalid token'; exit; }
-        if (!wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
+        if (defined('WIKI_REQUIRE_LOGIN') && WIKI_REQUIRE_LOGIN && !wiki_engine_is_logged_in()) { header('HTTP/1.1 403 Forbidden'); echo 'Not logged in'; exit; }
         $err = '';
         if (wiki_engine_rename_page($title, $new_title, $update_links, $err, $leave_stub, $update_limit)) {
             // Show summary page
@@ -521,6 +591,7 @@ if ($a === 'rename') {
 }
 
 if ($a === 'account') {
+    if (!(defined('WIKI_REQUIRE_LOGIN') && WIKI_REQUIRE_LOGIN)) { header('HTTP/1.1 404 Not Found'); echo 'Not available'; exit; }
     $subtitle = 'Account Settings';
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = isset($_POST['token']) ? $_POST['token'] : '';
@@ -558,6 +629,7 @@ if ($a === 'account') {
 }
 
 if ($a === 'users') {
+    if (!(defined('WIKI_REQUIRE_LOGIN') && WIKI_REQUIRE_LOGIN)) { header('HTTP/1.1 404 Not Found'); echo 'Not available'; exit; }
     if (!function_exists('wiki_engine_is_admin') || !wiki_engine_is_admin(null)) { header('HTTP/1.1 403 Forbidden'); echo 'Admin only'; exit; }
     $subtitle = 'User Management';
     $op_msg = '';
@@ -641,6 +713,7 @@ if ($a === 'users') {
 }
 
 if ($a === 'login') {
+    if (!(defined('WIKI_REQUIRE_LOGIN') && WIKI_REQUIRE_LOGIN)) { header('Location: wiki.php?a=front'); exit; }
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $username = isset($_POST['username']) ? (string)$_POST['username'] : '';
         $password = isset($_POST['password']) ? (string)$_POST['password'] : '';
@@ -703,9 +776,14 @@ if ($a === 'login') {
 }
 
 if ($a === 'logout') {
-    wiki_engine_logout();
-    header('Location: wiki.php?a=login');
-    exit;
+    if (defined('WIKI_REQUIRE_LOGIN') && WIKI_REQUIRE_LOGIN) {
+        wiki_engine_logout();
+        header('Location: wiki.php?a=login');
+        exit;
+    } else {
+        header('Location: wiki.php?a=front');
+        exit;
+    }
 }
 
 // Fallback: default to view

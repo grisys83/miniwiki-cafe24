@@ -14,12 +14,17 @@
 ## Rendering Pipeline
 - Normalize newlines → split into lines
 - Fenced code blocks (```)
+  - Language hint supported on opening fence: ```lang → `<pre class="lang-lang">` wrapper
 - Markdown tables (header + delimiter + data; aligns: `:---`, `---:`, `:---:`)
 - Headings, blockquotes, lists, HR
+  - Setext headings: H1 (`====`), H2 (`----`)
+- Footnotes: collect definitions (`[^id]: ...` with indented continuation)
 - Paragraph + hard-wrap (single newline → `<br />` when enabled)
 - Inline: backticks → `<code>`, images `![alt](url)`, links
-  - Unified `[label](target)` → external/path/internal
+  - Unified `[label](target)` → external/path/internal (supports optional title: `[label](url "title")`)
+  - Image titles: `![alt](url "title")`
   - Wiki `[[Page]]` → internal
+- Inline footnote refs `[^id]` → superscript links; emit footnotes section at end
 - Escape the rest (split on tags; HTML-escape only text segments)
 
 ## Links: Unified Rule
@@ -60,6 +65,6 @@
 - Avoids closures, namespaces, short array syntax.
 
 ## Extensibility
-- Add Markdown extensions (tables are already supported; footnotes/task lists can be added similarly).
+- Current selected extensions: tables, footnotes, task lists, link titles.
 - Implement Markdown link rewriting in `wiki_engine_update_links` if needed.
 - Add simple auth or cookie-based “remember me” for editor.
